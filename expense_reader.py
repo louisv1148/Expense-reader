@@ -38,22 +38,47 @@ class ExpenseReader:
             print(f"Error processing image {image_path}: {e}")
             return None
     
-    def extract_receipt_data(self, ocr_text):
-        """Use OpenAI to extract structured data from OCR text"""
-        prompt = f"""
-You are an AI assistant that extracts structured information from receipts.
-Here is the OCR text of a restaurant receipt:
+    def extract_receipt_data(self, ocr_text, use_training_examples=True):
+        """Use OpenAI to extract structured data from OCR text with few-shot learning"""
+        
+        # Build prompt with training examples from previous corrections
+        prompt = """You are an AI assistant that extracts structured information from receipts.
+
+Here are some examples of correctly extracted data from similar receipts:
+
+"""
+        
+        # Add training examples if available and requested
+        if use_training_examples:
+            try:
+                from database import ExpenseDatabase
+                db = ExpenseDatabase()
+                examples = db.get_training_examples(limit=3)
+                
+                for i, example in enumerate(examples, 1):
+                    prompt += f"""Example {i}:
+OCR Text: {example['ocr_text'][:200]}...
+Correct extraction:
+{{"restaurant_name": "{example['restaurant_name']}", "date": "{example['date']}", "total_amount": {example['total_amount']}}}
+
+"""
+            except Exception as e:
+                # If database isn't available, continue without examples
+                pass
+        
+        prompt += f"""
+Now extract data from this new receipt:
 
 ---
 {ocr_text}
 ---
 
 Please extract and return the information in JSON format with these exact keys:
-- "restaurant_name": The name of the restaurant/venue
+- "restaurant_name": The name of the restaurant/venue (be consistent with naming)
 - "date": The date of purchase (format: YYYY-MM-DD)
 - "total_amount": The total amount paid including tip (just the number, no currency symbol)
 
-If any information is not found, use null for that field.
+Learn from the examples above to be more accurate. If any information is not found, use null for that field.
 """
 
         try:

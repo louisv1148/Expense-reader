@@ -3,3 +3,5 @@ pytesseract
 Pillow
 python-dotenv
 pandas
+flask
+sqlite3

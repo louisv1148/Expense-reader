@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block title %}Upload Receipts - Expense Receipt Reader{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h3><i class="fas fa-upload"></i> Upload Receipt Images</h3>
+            </div>
+            <div class="card-body">
+                <form method="POST" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label for="files" class="form-label">Select receipt images</label>
+                        <input type="file" class="form-control" name="files[]" id="files" multiple 
+                               accept=".jpg,.jpeg,.png,.bmp,.tiff,.gif" required>
+                        <div class="form-text">
+                            Supported formats: JPG, PNG, BMP, TIFF, GIF. You can select multiple files.
+                        </div>
+                    </div>
+                    
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary btn-lg">
+                            <i class="fas fa-cloud-upload-alt"></i> Process Receipts
+                        </button>
+                    </div>
+                </form>
+                
+                <hr class="my-4">
+                
+                <div class="alert alert-info">
+                    <h6><i class="fas fa-info-circle"></i> How it works:</h6>
+                    <ol class="mb-0">
+                        <li>Upload one or more receipt images</li>
+                        <li>OCR extracts text from each image</li>
+                        <li>AI analyzes the text to find restaurant name, date, and total amount</li>
+                        <li>Review and edit the results if needed</li>
+                        <li>Export to CSV for your expense reports</li>
+                    </ol>
+                </div>
+            </div>
+        </div>
+        
+        <div class="text-center mt-4">
+            <a href="{{ url_for('index') }}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left"></i> Back to Dashboard
+            </a>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('files').addEventListener('change', function(e) {
+    const files = e.target.files;
+    if (files.length > 0) {
+        let fileList = '';
+        for (let i = 0; i < files.length; i++) {
+            fileList += files[i].name + '<br>';
+        }
+        // You could add a preview area here if desired
+    }
+});
+</script>
+{% endblock %}

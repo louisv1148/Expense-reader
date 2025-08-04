@@ -26,4 +26,6 @@ Thumbs.db
 # Project specific
 receipts/
 output/
+uploads/
 *.csv
+*.db

@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+
+{% block title %}Review Receipt - Expense Receipt Reader{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-image"></i> Receipt Image & OCR Text</h5>
+            </div>
+            <div class="card-body">
+                {% if image_data %}
+                    <div class="text-center mb-3">
+                        <img src="data:image/jpeg;base64,{{ image_data }}" 
+                             class="img-fluid" style="max-height: 400px;" alt="Receipt">
+                    </div>
+                {% endif %}
+                
+                <h6>OCR Extracted Text:</h6>
+                <div class="border p-3 bg-light" style="max-height: 300px; overflow-y: auto;">
+                    <pre class="mb-0" style="white-space: pre-wrap; font-size: 0.9em;">{{ receipt.ocr_text }}</pre>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-edit"></i> Edit Extracted Data</h5>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('update_receipt', receipt_id=receipt.id) }}">
+                    <div class="mb-3">
+                        <label for="restaurant_name" class="form-label">Restaurant Name</label>
+                        <input type="text" class="form-control" id="restaurant_name" name="restaurant_name" 
+                               value="{{ receipt.restaurant_name or '' }}" placeholder="Enter restaurant name">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="date" class="form-label">Date</label>
+                        <input type="date" class="form-control" id="date" name="date" 
+                               value="{{ receipt.date or '' }}">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="total_amount" class="form-label">Total Amount</label>
+                        <div class="input-group">
+                            <span class="input-group-text">$</span>
+                            <input type="number" class="form-control" id="total_amount" name="total_amount" 
+                                   step="0.01" value="{{ receipt.total_amount or '' }}" placeholder="0.00">
+                        </div>
+                    </div>
+                    
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-success btn-lg">
+                            <i class="fas fa-save"></i> Save Changes
+                        </button>
+                    </div>
+                </form>
+                
+                <hr class="my-4">
+                
+                <div class="alert alert-warning">
+                    <h6><i class="fas fa-lightbulb"></i> Tips for accuracy:</h6>
+                    <ul class="mb-0">
+                        <li>Check that the restaurant name matches what's on the receipt</li>
+                        <li>Verify the date format (YYYY-MM-DD)</li>
+                        <li>Make sure the total includes tip if applicable</li>
+                        <li>Double-check amounts against the receipt image</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        
+        <div class="text-center mt-4">
+            <a href="{{ url_for('index') }}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left"></i> Back to Dashboard
+            </a>
+        </div>
+    </div>
+</div>
+
+<style>
+.img-fluid {
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+</style>
+{% endblock %}
