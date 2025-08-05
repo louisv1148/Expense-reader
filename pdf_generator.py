@@ -60,10 +60,7 @@ class ExpensePDFGenerator:
         
         story = []
         
-        # Title page
-        story = self._add_title_page(story, receipts)
-        
-        # Summary table
+        # Summary table (removed title page)
         story = self._add_summary_table(story, receipts)
         
         # Individual receipt pages with images
@@ -141,21 +138,39 @@ class ExpensePDFGenerator:
         data = [["Date", "Restaurant/Venue", "Amount", "Receipt #"]]
         
         # Add receipt data
-        for i, receipt in enumerate(receipts, 1):
+        for receipt in receipts:
+            # Calculate USD amount
+            amount_usd = receipt.get('amount_mxn')  # This field stores USD amount
+            if not amount_usd and receipt.get('total_amount') and receipt.get('fx_rate'):
+                markup = receipt.get('markup_percent', 2.5)
+                usd_base = receipt['total_amount'] / receipt['fx_rate']
+                amount_usd = usd_base * (1 + markup / 100)
+            
+            # Create paragraph for filename to handle long names
+            filename_para = Paragraph(receipt['filename'] or 'N/A', self.normal_style)
+            
             data.append([
                 receipt['date'] or 'N/A',
                 receipt['restaurant_name'] or 'N/A',
-                f"${receipt['total_amount']:.2f}" if receipt['total_amount'] else 'N/A',
-                f"#{i:03d}"
+                f"${amount_usd:.2f}" if amount_usd else 'N/A',
+                filename_para
             ])
         
         # Add total row
-        total_amount = sum(r['total_amount'] or 0 for r in receipts)
-        data.append(['', '', '', ''])  # Empty row
-        data.append(['', 'TOTAL:', f"${total_amount:.2f}", ''])
+        total_amount_usd = 0
+        for receipt in receipts:
+            amount_usd = receipt.get('amount_mxn')
+            if not amount_usd and receipt.get('total_amount') and receipt.get('fx_rate'):
+                markup = receipt.get('markup_percent', 2.5)
+                usd_base = receipt['total_amount'] / receipt['fx_rate']
+                amount_usd = usd_base * (1 + markup / 100)
+            total_amount_usd += amount_usd or 0
         
-        # Create table
-        table = Table(data, colWidths=[1.2*inch, 3*inch, 1*inch, 0.8*inch])
+        data.append(['', '', '', ''])  # Empty row
+        data.append(['', 'TOTAL:', f"${total_amount_usd:.2f}", ''])
+        
+        # Create table with wider columns to prevent text overlap
+        table = Table(data, colWidths=[1*inch, 2.5*inch, 0.8*inch, 2.2*inch])
         table.setStyle(TableStyle([
             # Header row
             ('BACKGROUND', (0,0), (-1,0), colors.darkblue),
@@ -180,6 +195,7 @@ class ExpensePDFGenerator:
             ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
             ('LEFTPADDING', (1,1), (1,-3), 6),  # Restaurant names left-aligned
             ('ALIGN', (1,1), (1,-3), 'LEFT'),
+            ('WORDWRAP', (0,0), (-1,-1), True),  # Enable word wrapping for all cells
         ]))
         
         story.append(table)
@@ -196,11 +212,18 @@ class ExpensePDFGenerator:
             story.append(Paragraph(f"Receipt #{i:03d}", self.header_style))
             
             # Receipt info table
+            # Calculate USD amount
+            amount_usd = receipt.get('amount_mxn')  # This field stores USD amount
+            if not amount_usd and receipt.get('total_amount') and receipt.get('fx_rate'):
+                markup = receipt.get('markup_percent', 2.5)
+                usd_base = receipt['total_amount'] / receipt['fx_rate']
+                amount_usd = usd_base * (1 + markup / 100)
+            
             info_data = [
                 ["Restaurant:", receipt['restaurant_name'] or 'N/A'],
                 ["Date:", receipt['date'] or 'N/A'],
-                ["Amount:", f"${receipt['total_amount']:.2f}" if receipt['total_amount'] else 'N/A'],
-                ["Image File:", receipt['filename']]
+                ["Amount:", f"${amount_usd:.2f}" if amount_usd else 'N/A'],
+                ["Image File:", receipt['filename'] or 'N/A']
             ]
             
             info_table = Table(info_data, colWidths=[1.5*inch, 4*inch])
