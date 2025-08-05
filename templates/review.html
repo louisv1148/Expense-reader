@@ -13,7 +13,12 @@
                 {% if image_data %}
                     <div class="text-center mb-3">
                         <img src="data:image/jpeg;base64,{{ image_data }}" 
-                             class="img-fluid" style="max-height: 400px;" alt="Receipt">
+                             class="img-fluid zoomable-image" 
+                             style="max-height: 400px; cursor: zoom-in;" 
+                             alt="Receipt"
+                             onclick="openImageModal(this)">
+                        <br>
+                        <small class="text-muted"><i class="fas fa-search-plus"></i> Click image to zoom</small>
                     </div>
                 {% endif %}
                 
@@ -32,24 +37,120 @@
             </div>
             <div class="card-body">
                 <form method="POST" action="{{ url_for('update_receipt', receipt_id=receipt.id) }}">
-                    <div class="mb-3">
-                        <label for="restaurant_name" class="form-label">Restaurant Name</label>
-                        <input type="text" class="form-control" id="restaurant_name" name="restaurant_name" 
-                               value="{{ receipt.restaurant_name or '' }}" placeholder="Enter restaurant name">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="restaurant_name" class="form-label">Restaurant Name (Proveedor)</label>
+                                <input type="text" class="form-control" id="restaurant_name" name="restaurant_name" 
+                                       value="{{ receipt.restaurant_name or '' }}" placeholder="Enter restaurant name">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="date" class="form-label">Date</label>
+                                <input type="date" class="form-control" id="date" name="date" 
+                                       value="{{ receipt.date or '' }}">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="total_amount" class="form-label">Total Amount (MXN)</label>
+                                <div class="input-group">
+                                    <span class="input-group-text">$</span>
+                                    <input type="number" class="form-control" id="total_amount" name="total_amount" 
+                                           step="0.01" value="{{ receipt.total_amount or '' }}" placeholder="0.00"
+                                           onchange="calculateUSD()">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="fx_rate" class="form-label">FX Rate (MXN to USD)</label>
+                                <input type="number" class="form-control" id="fx_rate" name="fx_rate" 
+                                       step="0.01" value="{{ receipt.fx_rate or 20.0 }}" placeholder="20.00"
+                                       onchange="calculateUSD()">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="markup_percent" class="form-label">Markup %</label>
+                                <input type="number" class="form-control" id="markup_percent" name="markup_percent" 
+                                       step="0.1" value="{{ receipt.markup_percent or 2.5 }}" placeholder="2.5"
+                                       onchange="calculateUSD()">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="amount_usd" class="form-label">Amount in USD (Calculated)</label>
+                                <div class="input-group">
+                                    <span class="input-group-text">$</span>
+                                    <input type="text" class="form-control" id="amount_usd" readonly 
+                                           placeholder="Calculated automatically">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-12">
+                            <div class="mb-3">
+                                <label for="detalle" class="form-label">Detalle (Always unique)</label>
+                                <input type="text" class="form-control" id="detalle" name="detalle" 
+                                       value="{{ receipt.detalle or '' }}" placeholder="Enter unique detail description">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="reembolso" class="form-label">Reembolso</label>
+                                <input type="text" class="form-control" id="reembolso" name="reembolso" 
+                                       value="{{ receipt.reembolso or '' }}" placeholder="Enter reembolso category"
+                                       list="reembolso-suggestions" autocomplete="off">
+                                <datalist id="reembolso-suggestions">
+                                    <!-- Dynamic suggestions will be loaded here -->
+                                </datalist>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="cuenta_contable" class="form-label">Cuenta Contable</label>
+                                <select class="form-control" id="cuenta_contable" name="cuenta_contable">
+                                    <option value="Comidas con Clientes" {{ 'selected' if receipt.cuenta_contable == 'Comidas con Clientes' else '' }}>Comidas con Clientes</option>
+                                    <option value="Eventos Internos" {{ 'selected' if receipt.cuenta_contable == 'Eventos Internos' else '' }}>Eventos Internos</option>
+                                    <option value="Gastos Transporte" {{ 'selected' if receipt.cuenta_contable == 'Gastos Transporte' else '' }}>Gastos Transporte</option>
+                                    <option value="Honorarios Legales" {{ 'selected' if receipt.cuenta_contable == 'Honorarios Legales' else '' }}>Honorarios Legales</option>
+                                    <option value="Gastos de oficina" {{ 'selected' if receipt.cuenta_contable == 'Gastos de oficina' else '' }}>Gastos de oficina</option>
+                                    <option value="Telefonia celular" {{ 'selected' if receipt.cuenta_contable == 'Telefonia celular' else '' }}>Telefonia celular</option>
+                                    <option value="Otros Gastos de Computación" {{ 'selected' if receipt.cuenta_contable == 'Otros Gastos de Computación' else '' }}>Otros Gastos de Computación</option>
+                                    <option value="Regalos" {{ 'selected' if receipt.cuenta_contable == 'Regalos' else '' }}>Regalos</option>
+                                    <option value="Viajes" {{ 'selected' if receipt.cuenta_contable == 'Viajes' else '' }}>Viajes</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="cc" class="form-label">CC (Cost Center)</label>
+                                <select class="form-control" id="cc" name="cc">
+                                    <option value="Alternativos" {{ 'selected' if receipt.cc == 'Alternativos' else '' }}>Alternativos</option>
+                                    <option value="DI1" {{ 'selected' if receipt.cc == 'DI1' else '' }}>DI1</option>
+                                    <option value="DI2" {{ 'selected' if receipt.cc == 'DI2' else '' }}>DI2</option>
+                                </select>
+                            </div>
+                        </div>
                     </div>
                     
                     <div class="mb-3">
-                        <label for="date" class="form-label">Date</label>
-                        <input type="date" class="form-control" id="date" name="date" 
-                               value="{{ receipt.date or '' }}">
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="total_amount" class="form-label">Total Amount</label>
-                        <div class="input-group">
-                            <span class="input-group-text">$</span>
-                            <input type="number" class="form-control" id="total_amount" name="total_amount" 
-                                   step="0.01" value="{{ receipt.total_amount or '' }}" placeholder="0.00">
+                        <label class="form-label">Filename Format Preview</label>
+                        <div class="form-control-plaintext bg-light p-2" id="filename_preview">
+                            <i class="fas fa-file-image"></i> <span id="preview_text">Enter date and restaurant name to see preview</span>
                         </div>
                     </div>
                     
@@ -82,6 +183,24 @@
     </div>
 </div>
 
+<!-- Image Zoom Modal -->
+<div class="modal fade" id="imageModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Receipt Image - Full Size</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body text-center">
+                <img id="modalImage" src="" class="img-fluid" alt="Receipt Full Size" style="max-width: 100%; height: auto;">
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <style>
 .img-fluid {
     border: 1px solid #ddd;
@@ -89,4 +208,68 @@
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 </style>
+
+<script>
+function calculateUSD() {
+    const amountMXN = parseFloat(document.getElementById('total_amount').value) || 0;
+    const fxRate = parseFloat(document.getElementById('fx_rate').value) || 0;
+    const markup = parseFloat(document.getElementById('markup_percent').value) || 0;
+    
+    if (amountMXN > 0 && fxRate > 0) {
+        // Convert MXN to USD, then apply markup
+        const usdAmount = amountMXN / fxRate;
+        const usdWithMarkup = usdAmount * (1 + markup / 100);
+        document.getElementById('amount_usd').value = usdWithMarkup.toFixed(2);
+    } else {
+        document.getElementById('amount_usd').value = '';
+    }
+}
+
+function updateFilenamePreview() {
+    const date = document.getElementById('date').value;
+    const restaurant = document.getElementById('restaurant_name').value;
+    
+    if (date && restaurant) {
+        const dateObj = new Date(date);
+        const year = dateObj.getFullYear();
+        const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+        const cleanName = restaurant.replace(/[^\w\s-]/g, '').replace(/\s+/g, ' ').trim().substring(0, 30);
+        const filename = `${year}_${month}_${cleanName}.jpeg`;
+        document.getElementById('preview_text').textContent = filename;
+    } else {
+        document.getElementById('preview_text').textContent = 'Enter date and restaurant name to see preview';
+    }
+}
+
+function openImageModal(imgElement) {
+    const modal = new bootstrap.Modal(document.getElementById('imageModal'));
+    document.getElementById('modalImage').src = imgElement.src;
+    modal.show();
+}
+
+function loadReembolsoSuggestions() {
+    fetch('/api/reembolso-suggestions')
+        .then(response => response.json())
+        .then(suggestions => {
+            const datalist = document.getElementById('reembolso-suggestions');
+            datalist.innerHTML = '';
+            suggestions.forEach(suggestion => {
+                const option = document.createElement('option');
+                option.value = suggestion;
+                datalist.appendChild(option);
+            });
+        })
+        .catch(error => console.log('No previous reembolso suggestions available'));
+}
+
+// Add event listeners
+document.addEventListener('DOMContentLoaded', function() {
+    calculateUSD();
+    updateFilenamePreview();
+    loadReembolsoSuggestions();
+    
+    document.getElementById('date').addEventListener('change', updateFilenamePreview);
+    document.getElementById('restaurant_name').addEventListener('input', updateFilenamePreview);
+});
+</script>
 {% endblock %}

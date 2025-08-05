@@ -85,17 +85,45 @@ def update_receipt(receipt_id):
     restaurant_name = request.form.get('restaurant_name')
     date = request.form.get('date')
     total_amount = request.form.get('total_amount')
+    cuenta_contable = request.form.get('cuenta_contable')
+    cc = request.form.get('cc')
+    fx_rate = request.form.get('fx_rate')
+    markup_percent = request.form.get('markup_percent')
+    reembolso = request.form.get('reembolso')
+    detalle = request.form.get('detalle')
     
-    # Convert amount to float if provided
-    if total_amount:
-        try:
-            total_amount = float(total_amount)
-        except ValueError:
-            total_amount = None
+    # Convert numeric fields
+    try:
+        total_amount = float(total_amount) if total_amount else None
+        fx_rate = float(fx_rate) if fx_rate else None
+        markup_percent = float(markup_percent) if markup_percent else None
+    except ValueError:
+        flash('Invalid numeric values provided')
+        return redirect(url_for('review', receipt_id=receipt_id))
     
-    db.update_receipt(receipt_id, restaurant_name, date, total_amount)
+    # Update receipt with all new fields
+    db.update_receipt(receipt_id, restaurant_name, date, total_amount, 
+                     cuenta_contable, cc, fx_rate, markup_percent, reembolso, detalle)
+    
+    # Rename file if we have date and restaurant name
+    if date and restaurant_name:
+        from filename_utils import format_receipt_filename, rename_receipt_file
+        receipt = db.get_receipt(receipt_id)
+        if receipt and receipt['file_path']:
+            new_filename = format_receipt_filename(date, restaurant_name)
+            if new_filename:
+                new_path = rename_receipt_file(receipt['file_path'], new_filename)
+                if new_path:
+                    # Update database with new file path
+                    import sqlite3
+                    conn = sqlite3.connect(db.db_path)
+                    cursor = conn.cursor()
+                    cursor.execute('UPDATE receipts SET file_path = ?, filename = ? WHERE id = ?', 
+                                 (new_path, new_filename, receipt_id))
+                    conn.commit()
+                    conn.close()
+    
     flash('Receipt updated successfully')
-    
     return redirect(url_for('index'))
 
 @app.route('/export')
@@ -112,6 +140,60 @@ def export():
     
     return send_file(csv_path, as_attachment=True, download_name='expense_report.csv')
 
+@app.route('/export/pdf')
+def export_pdf():
+    """Export expense report as PDF with receipt images"""
+    try:
+        from pdf_generator import ExpensePDFGenerator
+        
+        generator = ExpensePDFGenerator()
+        pdf_filename = generator.generate_expense_report("expense_report_approval.pdf", include_images=True)
+        
+        return send_file(pdf_filename, as_attachment=True, download_name='expense_report_approval.pdf')
+        
+    except ValueError as e:
+        flash(str(e))
+        return redirect(url_for('index'))
+    except Exception as e:
+        flash(f'Error generating PDF: {str(e)}')
+        return redirect(url_for('index'))
+
+@app.route('/export/pdf-summary')
+def export_pdf_summary():
+    """Export expense report as PDF summary only (no images)"""
+    try:
+        from pdf_generator import ExpensePDFGenerator
+        
+        generator = ExpensePDFGenerator()
+        pdf_filename = generator.generate_expense_report("expense_summary.pdf", include_images=False)
+        
+        return send_file(pdf_filename, as_attachment=True, download_name='expense_summary.pdf')
+        
+    except ValueError as e:
+        flash(str(e))
+        return redirect(url_for('index'))
+    except Exception as e:
+        flash(f'Error generating PDF: {str(e)}')
+        return redirect(url_for('index'))
+
+@app.route('/export/excel')
+def export_excel():
+    """Export expense report as Excel file matching company format"""
+    try:
+        from excel_generator import ExcelExpenseGenerator
+        
+        generator = ExcelExpenseGenerator()
+        excel_filename = generator.generate_monthly_report()
+        
+        return send_file(excel_filename, as_attachment=True, download_name=excel_filename)
+        
+    except ValueError as e:
+        flash(str(e))
+        return redirect(url_for('index'))
+    except Exception as e:
+        flash(f'Error generating Excel: {str(e)}')
+        return redirect(url_for('index'))
+
 @app.route('/delete/<int:receipt_id>', methods=['POST'])
 def delete_receipt(receipt_id):
     """Delete a receipt"""
@@ -125,6 +207,15 @@ def delete_receipt(receipt_id):
         flash('Receipt deleted successfully')
     
     return redirect(url_for('index'))
+
+@app.route('/api/reembolso-suggestions')
+def get_reembolso_suggestions():
+    """Get remembered reembolso suggestions for autocomplete"""
+    try:
+        suggestions = db.get_remembered_categories('reembolso')
+        return jsonify(suggestions)
+    except Exception as e:
+        return jsonify([])
 
 def allowed_file(filename):
     """Check if file extension is allowed"""

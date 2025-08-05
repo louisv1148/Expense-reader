@@ -17,6 +17,15 @@ Automatically extract expense data from receipt images using OCR and AI, with a 
 - **Database storage** for processed receipts
 - **CSV export** from web interface
 - **Upload interface** for new receipts
+- **Feedback learning system** that improves accuracy from corrections
+
+### Version 3.0 (PDF Reports)
+- **Professional PDF expense reports** with receipt images
+- **Approval-ready formatting** with employee information fields
+- **Summary tables** with totals and receipt numbering
+- **Individual receipt pages** with embedded images
+- **Multiple export options** (PDF with images, PDF summary, CSV)
+- **Automatic image resizing** and professional layout
 
 ## Setup
 
