@@ -11,6 +11,15 @@
                 <a href="{{ url_for('upload') }}" class="btn btn-primary">
                     <i class="fas fa-upload"></i> Upload Receipts
                 </a>
+                <button type="button" class="btn btn-outline-secondary" onclick="showAddCostCenterModal()">
+                    <i class="fas fa-plus"></i> Add Cost Center
+                </button>
+                <button type="button" class="btn btn-outline-info" onclick="showUpdateFXModal()">
+                    <i class="fas fa-dollar-sign"></i> Update FX Rate
+                </button>
+                <button type="button" class="btn btn-outline-danger" onclick="clearAllReceipts()">
+                    <i class="fas fa-trash-alt"></i> Clear All
+                </button>
                 <div class="btn-group" role="group">
                     <button type="button" class="btn btn-success dropdown-toggle" data-bs-toggle="dropdown">
                         <i class="fas fa-download"></i> Export
@@ -80,10 +89,20 @@
                                                 {% endif %}
                                             </td>
                                             <td>
-                                                <a href="{{ url_for('review', receipt_id=receipt.id) }}" 
-                                                   class="btn btn-sm btn-outline-primary">
-                                                    <i class="fas fa-edit"></i> Review
-                                                </a>
+                                                <div class="btn-group" role="group">
+                                                    <a href="{{ url_for('review', receipt_id=receipt.id) }}" 
+                                                       class="btn btn-sm btn-outline-primary">
+                                                        <i class="fas fa-edit"></i> Review
+                                                    </a>
+                                                    <button type="button" class="btn btn-sm btn-outline-warning" 
+                                                            onclick="divideBetweenCCs({{ receipt.id }})">
+                                                        <i class="fas fa-share-alt"></i> Divide CCs
+                                                    </button>
+                                                    <button type="button" class="btn btn-sm btn-outline-danger" 
+                                                            onclick="deleteReceipt({{ receipt.id }})">
+                                                        <i class="fas fa-trash"></i> Delete
+                                                    </button>
+                                                </div>
                                             </td>
                                         </tr>
                                         {% endfor %}
@@ -106,4 +125,294 @@
         {% endif %}
     </div>
 </div>
+
+<!-- Add Cost Center Modal -->
+<div class="modal fade" id="addCostCenterModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Add New Cost Center</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addCostCenterForm">
+                    <div class="mb-3">
+                        <label for="costCenterName" class="form-label">Cost Center Name</label>
+                        <input type="text" class="form-control" id="costCenterName" required>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="addCostCenter()">Add Cost Center</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Update FX Rate Modal -->
+<div class="modal fade" id="updateFXModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Update FX Rate for All Receipts</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle"></i> This will update the FX rate for ALL receipts and recalculate USD amounts.
+                </div>
+                <form id="updateFXForm">
+                    <div class="mb-3">
+                        <label for="globalFXRate" class="form-label">FX Rate (MXN/USD)</label>
+                        <input type="number" step="0.01" class="form-control" id="globalFXRate" value="20.0" required>
+                        <div class="form-text">Current market rate (e.g., 20.50 means 20.50 MXN = 1 USD)</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="globalMarkup" class="form-label">Markup Percentage</label>
+                        <input type="number" step="0.1" class="form-control" id="globalMarkup" value="2.5" required>
+                        <div class="form-text">Company markup percentage (default: 2.5%)</div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-info" onclick="updateAllFXRates()">Update All Receipts</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Divide Between Cost Centers Modal -->
+<div class="modal fade" id="divideCCModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Divide Between Cost Centers</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Select the cost centers to divide this expense between:</p>
+                <div id="costCenterCheckboxes">
+                    <!-- Dynamically populated -->
+                </div>
+                <div class="mt-3">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="showAddCostCenterModal()">
+                        <i class="fas fa-plus"></i> Add New Cost Center
+                    </button>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-warning" onclick="confirmDivide()">Divide Expense</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let currentReceiptId = null;
+
+function deleteReceipt(receiptId) {
+    if (confirm('Are you sure you want to delete this receipt? This action cannot be undone.')) {
+        fetch(`/delete/${receiptId}`, {
+            method: 'POST'
+        }).then(() => {
+            location.reload();
+        }).catch(error => {
+            alert('Error deleting receipt: ' + error.message);
+        });
+    }
+}
+
+async function divideBetweenCCs(receiptId) {
+    currentReceiptId = receiptId;
+    
+    // Load cost centers
+    try {
+        const response = await fetch('/api/cost-centers');
+        const costCenters = await response.json();
+        
+        const checkboxContainer = document.getElementById('costCenterCheckboxes');
+        checkboxContainer.innerHTML = '';
+        
+        costCenters.forEach(cc => {
+            const div = document.createElement('div');
+            div.className = 'form-check';
+            div.innerHTML = `
+                <input class="form-check-input" type="checkbox" value="${cc}" id="cc-${cc}">
+                <label class="form-check-label" for="cc-${cc}">${cc}</label>
+            `;
+            checkboxContainer.appendChild(div);
+        });
+        
+        new bootstrap.Modal(document.getElementById('divideCCModal')).show();
+        
+    } catch (error) {
+        alert('Error loading cost centers: ' + error.message);
+    }
+}
+
+async function confirmDivide() {
+    const checkboxes = document.querySelectorAll('#costCenterCheckboxes input[type="checkbox"]:checked');
+    const selectedCCs = Array.from(checkboxes).map(cb => cb.value);
+    
+    if (selectedCCs.length < 2) {
+        alert('Please select at least 2 cost centers to divide the expense.');
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/divide-cc/${currentReceiptId}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                cost_centers: selectedCCs
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            bootstrap.Modal.getInstance(document.getElementById('divideCCModal')).hide();
+            location.reload();
+        } else {
+            alert('Error dividing expense: ' + result.error);
+        }
+        
+    } catch (error) {
+        alert('Error dividing expense: ' + error.message);
+    }
+}
+
+function showAddCostCenterModal() {
+    // Hide divide modal if it's open
+    const divideModal = bootstrap.Modal.getInstance(document.getElementById('divideCCModal'));
+    if (divideModal) {
+        divideModal.hide();
+    }
+    new bootstrap.Modal(document.getElementById('addCostCenterModal')).show();
+}
+
+async function addCostCenter() {
+    const name = document.getElementById('costCenterName').value.trim();
+    
+    if (!name) {
+        alert('Please enter a cost center name.');
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/add-cost-center', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                name: name
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            bootstrap.Modal.getInstance(document.getElementById('addCostCenterModal')).hide();
+            document.getElementById('costCenterName').value = '';
+            
+            // Show the divide modal again with updated cost centers only if we came from there
+            if (currentReceiptId) {
+                setTimeout(() => divideBetweenCCs(currentReceiptId), 300);
+            } else {
+                alert('Cost center added successfully!');
+            }
+        } else {
+            alert('Error adding cost center: ' + result.error);
+        }
+        
+    } catch (error) {
+        alert('Error adding cost center: ' + error.message);
+    }
+}
+
+function showUpdateFXModal() {
+    new bootstrap.Modal(document.getElementById('updateFXModal')).show();
+}
+
+async function updateAllFXRates() {
+    const fxRate = parseFloat(document.getElementById('globalFXRate').value);
+    const markup = parseFloat(document.getElementById('globalMarkup').value);
+    
+    if (!fxRate || fxRate <= 0) {
+        alert('Please enter a valid FX rate.');
+        return;
+    }
+    
+    if (markup < 0) {
+        alert('Markup percentage cannot be negative.');
+        return;
+    }
+    
+    if (!confirm(`Are you sure you want to update the FX rate to ${fxRate} for ALL receipts? This will recalculate all USD amounts.`)) {
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/update-fx-rate', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                fx_rate: fxRate,
+                markup_percent: markup
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            bootstrap.Modal.getInstance(document.getElementById('updateFXModal')).hide();
+            alert(`✅ ${result.message}`);
+            location.reload();
+        } else {
+            alert('Error updating FX rate: ' + result.error);
+        }
+        
+    } catch (error) {
+        alert('Error updating FX rate: ' + error.message);
+    }
+}
+
+async function clearAllReceipts() {
+    const confirmation = prompt('⚠️ WARNING: This will permanently delete ALL receipts and files.\n\nType "DELETE ALL" to confirm:');
+    
+    if (confirmation !== 'DELETE ALL') {
+        alert('Operation cancelled. You must type "DELETE ALL" exactly to confirm.');
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/clear-all', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            alert(`✅ ${result.message}`);
+            location.reload();
+        } else {
+            alert('Error clearing receipts: ' + result.error);
+        }
+        
+    } catch (error) {
+        alert('Error clearing receipts: ' + error.message);
+    }
+}
+</script>
 {% endblock %}

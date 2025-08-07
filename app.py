@@ -195,7 +195,7 @@ def export_excel():
         return redirect(url_for('index'))
 
 @app.route('/delete/<int:receipt_id>', methods=['POST'])
-def delete_receipt(receipt_id):
+def delete_receipt_route(receipt_id):
     """Delete a receipt"""
     receipt = db.get_receipt(receipt_id)
     if receipt:
@@ -203,8 +203,13 @@ def delete_receipt(receipt_id):
         if os.path.exists(receipt['file_path']):
             os.remove(receipt['file_path'])
         
-        # Delete from database (we'll need to add this method)
-        flash('Receipt deleted successfully')
+        # Delete from database
+        if db.delete_receipt(receipt_id):
+            flash('Receipt deleted successfully')
+        else:
+            flash('Error deleting receipt')
+    else:
+        flash('Receipt not found')
     
     return redirect(url_for('index'))
 
@@ -216,6 +221,78 @@ def get_reembolso_suggestions():
         return jsonify(suggestions)
     except Exception as e:
         return jsonify([])
+
+@app.route('/api/cost-centers')
+def get_cost_centers():
+    """Get all available cost centers"""
+    try:
+        cost_centers = db.get_remembered_categories('cc')
+        # Add default cost centers if none exist
+        if not cost_centers:
+            cost_centers = ['Alternativos', 'Corporativo', 'Operaciones']
+        return jsonify(cost_centers)
+    except Exception as e:
+        return jsonify(['Alternativos', 'Corporativo', 'Operaciones'])
+
+@app.route('/api/add-cost-center', methods=['POST'])
+def add_cost_center():
+    """Add a new cost center"""
+    data = request.get_json()
+    cost_center_name = data.get('name')
+    
+    if not cost_center_name:
+        return jsonify({'error': 'Cost center name required'}), 400
+    
+    db.add_cost_center(cost_center_name)
+    return jsonify({'success': True})
+
+@app.route('/divide-cc/<int:receipt_id>', methods=['POST'])
+def divide_between_cost_centers(receipt_id):
+    """Divide expense between multiple cost centers"""
+    data = request.get_json()
+    cost_centers = data.get('cost_centers', [])
+    
+    if len(cost_centers) < 2:
+        return jsonify({'error': 'Need at least 2 cost centers to split'}), 400
+    
+    if db.duplicate_receipt_with_cc_split(receipt_id, cost_centers):
+        return jsonify({'success': True})
+    else:
+        return jsonify({'error': 'Failed to split receipt'}), 500
+
+@app.route('/api/update-fx-rate', methods=['POST'])
+def update_fx_rate():
+    """Update FX rate for all receipts"""
+    data = request.get_json()
+    fx_rate = data.get('fx_rate')
+    markup_percent = data.get('markup_percent', 2.5)
+    
+    if not fx_rate or fx_rate <= 0:
+        return jsonify({'error': 'Valid FX rate required'}), 400
+    
+    try:
+        updated_count = db.update_all_fx_rates(fx_rate, markup_percent)
+        return jsonify({
+            'success': True,
+            'updated_count': updated_count,
+            'message': f'Updated FX rate for {updated_count} receipts'
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/clear-all', methods=['POST'])
+def clear_all_receipts():
+    """Clear all receipts from the database"""
+    try:
+        deleted_records, deleted_files = db.clear_all_receipts()
+        return jsonify({
+            'success': True,
+            'deleted_records': deleted_records,
+            'deleted_files': deleted_files,
+            'message': f'Cleared {deleted_records} receipts and {deleted_files} files'
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 def allowed_file(filename):
     """Check if file extension is allowed"""

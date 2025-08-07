@@ -139,9 +139,7 @@
                             <div class="mb-3">
                                 <label for="cc" class="form-label">CC (Cost Center)</label>
                                 <select class="form-control" id="cc" name="cc">
-                                    <option value="Alternativos" {{ 'selected' if receipt.cc == 'Alternativos' else '' }}>Alternativos</option>
-                                    <option value="DI1" {{ 'selected' if receipt.cc == 'DI1' else '' }}>DI1</option>
-                                    <option value="DI2" {{ 'selected' if receipt.cc == 'DI2' else '' }}>DI2</option>
+                                    <!-- Dynamic cost centers will be loaded here -->
                                 </select>
                             </div>
                         </div>
@@ -253,7 +251,9 @@ function loadReembolsoSuggestions() {
         .then(suggestions => {
             const datalist = document.getElementById('reembolso-suggestions');
             datalist.innerHTML = '';
-            suggestions.forEach(suggestion => {
+            // Remove duplicates using Set
+            const uniqueSuggestions = [...new Set(suggestions)];
+            uniqueSuggestions.forEach(suggestion => {
                 const option = document.createElement('option');
                 option.value = suggestion;
                 datalist.appendChild(option);
@@ -262,11 +262,47 @@ function loadReembolsoSuggestions() {
         .catch(error => console.log('No previous reembolso suggestions available'));
 }
 
+function loadCostCenters() {
+    fetch('/api/cost-centers')
+        .then(response => response.json())
+        .then(costCenters => {
+            const select = document.getElementById('cc');
+            const currentValue = '{{ receipt.cc }}';
+            select.innerHTML = '';
+            
+            // Remove duplicates using Set
+            const uniqueCostCenters = [...new Set(costCenters)];
+            uniqueCostCenters.forEach(cc => {
+                const option = document.createElement('option');
+                option.value = cc;
+                option.textContent = cc;
+                option.selected = cc === currentValue;
+                select.appendChild(option);
+            });
+        })
+        .catch(error => {
+            console.log('Error loading cost centers, using defaults');
+            // Fallback to default cost centers
+            const select = document.getElementById('cc');
+            const currentValue = '{{ receipt.cc }}';
+            const defaultCCs = ['Alternativos', 'DI1', 'DI2'];
+            select.innerHTML = '';
+            defaultCCs.forEach(cc => {
+                const option = document.createElement('option');
+                option.value = cc;
+                option.textContent = cc;
+                option.selected = cc === currentValue;
+                select.appendChild(option);
+            });
+        });
+}
+
 // Add event listeners
 document.addEventListener('DOMContentLoaded', function() {
     calculateUSD();
     updateFilenamePreview();
     loadReembolsoSuggestions();
+    loadCostCenters();
     
     document.getElementById('date').addEventListener('change', updateFilenamePreview);
     document.getElementById('restaurant_name').addEventListener('input', updateFilenamePreview);

@@ -63,13 +63,23 @@ class ExpensePDFGenerator:
         # Summary table (removed title page)
         story = self._add_summary_table(story, receipts)
         
-        # Individual receipt pages with images
+        # Individual receipt pages with images - show each unique image only once
         if include_images:
             story.append(PageBreak())
-            story = self._add_receipt_details(story, receipts)
+            story = self._add_unique_receipt_images(story, receipts)
         
         # Build PDF
         doc.build(story)
+        
+        # Clean up temporary files
+        if hasattr(self, '_temp_files'):
+            for temp_file in self._temp_files:
+                try:
+                    os.remove(temp_file)
+                except:
+                    pass  # Don't fail if cleanup doesn't work
+            del self._temp_files
+        
         return output_filename
     
     def _add_title_page(self, story, receipts):
@@ -255,12 +265,111 @@ class ExpensePDFGenerator:
         
         return story
     
-    def _resize_image_for_pdf(self, image_path, max_width=5*inch, max_height=6*inch):
-        """Resize image to fit in PDF while maintaining aspect ratio"""
+    def _add_unique_receipt_images(self, story, receipts):
+        """Add individual receipt pages with images - show each unique image only once"""
         
-        # Open image to get dimensions
-        with PILImage.open(image_path) as pil_img:
-            orig_width, orig_height = pil_img.size
+        story.append(Paragraph("RECEIPT IMAGES", self.title_style))
+        story.append(Spacer(1, 20))
+        
+        # Track unique images by restaurant name + date to avoid duplicates from divided expenses
+        # Also check file existence
+        seen_receipts = set()
+        unique_receipts = []
+        
+        for receipt in receipts:
+            # Create a unique key based on restaurant name and date
+            unique_key = f"{receipt.get('restaurant_name', 'Unknown')}_{receipt.get('date', 'Unknown')}"
+            file_path = receipt['file_path']
+            
+            # Only add if we haven't seen this receipt before AND the file exists
+            if (unique_key not in seen_receipts and 
+                file_path and 
+                os.path.exists(file_path)):
+                seen_receipts.add(unique_key)
+                unique_receipts.append(receipt)
+        
+        for i, receipt in enumerate(unique_receipts, 1):
+            # Receipt header
+            story.append(Paragraph(f"Receipt #{i:03d}", self.header_style))
+            
+            # Receipt info table - show basic info for the original receipt
+            info_data = [
+                ["Restaurant:", receipt['restaurant_name'] or 'N/A'],
+                ["Date:", receipt['date'] or 'N/A'],
+                ["Image File:", receipt['filename'] or 'N/A']
+            ]
+            
+            info_table = Table(info_data, colWidths=[1.5*inch, 4*inch])
+            info_table.setStyle(TableStyle([
+                ('ALIGN', (0,0), (-1,-1), 'LEFT'),
+                ('FONTNAME', (0,0), (0,-1), 'Helvetica-Bold'),
+                ('FONTNAME', (1,0), (1,-1), 'Helvetica'),
+                ('FONTSIZE', (0,0), (-1,-1), 10),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+            ]))
+            
+            story.append(info_table)
+            story.append(Spacer(1, 15))
+            
+            # Add receipt image if it exists
+            if os.path.exists(receipt['file_path']):
+                try:
+                    # Resize image to fit page
+                    img = self._resize_image_for_pdf(receipt['file_path'])
+                    story.append(img)
+                except Exception as e:
+                    story.append(Paragraph(f"[Image could not be loaded: {str(e)}]", self.normal_style))
+            else:
+                story.append(Paragraph("[Receipt image not found]", self.normal_style))
+            
+            # Add page break between receipts (except for the last one)
+            if i < len(unique_receipts):
+                story.append(PageBreak())
+        
+        return story
+    
+    def _resize_image_for_pdf(self, image_path, max_width=5*inch, max_height=6*inch):
+        """Resize image to fit in PDF while maintaining aspect ratio and fixing orientation"""
+        
+        # Open image and fix orientation if needed
+        try:
+            with PILImage.open(image_path) as pil_img:
+                # Check if image needs rotation based on EXIF orientation
+                needs_rotation = False
+                try:
+                    exif = pil_img._getexif()
+                    if exif is not None:
+                        orientation = exif.get(274)  # 274 is the EXIF orientation tag
+                        if orientation and orientation > 1:
+                            needs_rotation = True
+                            if orientation == 3:
+                                pil_img = pil_img.rotate(180, expand=True)
+                            elif orientation == 6:
+                                pil_img = pil_img.rotate(270, expand=True)
+                            elif orientation == 8:
+                                pil_img = pil_img.rotate(90, expand=True)
+                except:
+                    # If EXIF processing fails, continue with original image
+                    pass
+                
+                # Get dimensions after potential rotation
+                orig_width, orig_height = pil_img.size
+                
+                # If rotation was needed, save corrected image
+                if needs_rotation:
+                    import tempfile
+                    temp_path = tempfile.mktemp(suffix='.jpg')
+                    pil_img.save(temp_path, 'JPEG', quality=85)
+                    use_temp_file = True
+                else:
+                    temp_path = image_path
+                    use_temp_file = False
+        except Exception as e:
+            # If image processing fails, use original
+            temp_path = image_path
+            use_temp_file = False
+            with PILImage.open(image_path) as pil_img:
+                orig_width, orig_height = pil_img.size
         
         # Calculate scaling factor
         width_ratio = max_width / orig_width
@@ -272,7 +381,14 @@ class ExpensePDFGenerator:
         new_height = orig_height * scale_factor
         
         # Create ReportLab Image object
-        img = Image(image_path, width=new_width, height=new_height)
+        img = Image(temp_path, width=new_width, height=new_height)
+        
+        # Store temp file path for cleanup after PDF is built
+        if use_temp_file and hasattr(self, '_temp_files'):
+            self._temp_files.append(temp_path)
+        elif use_temp_file:
+            self._temp_files = [temp_path]
+        
         return img
     
     def _get_date_range(self, receipts):

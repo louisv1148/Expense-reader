@@ -35,8 +35,17 @@ class ExcelExpenseGenerator:
                 if new_filename:
                     formatted_filename = new_filename
             
+            # Format date as DD/MM/YYYY
+            formatted_date = ''
+            if receipt.get('date'):
+                try:
+                    date_obj = datetime.strptime(receipt['date'], '%Y-%m-%d')
+                    formatted_date = date_obj.strftime('%d/%m/%Y')
+                except:
+                    formatted_date = receipt['date']  # Fallback to original format
+            
             row = {
-                'Fecha': receipt.get('date', ''),
+                'Fecha': formatted_date,
                 'Proveedor': receipt.get('restaurant_name', ''),
                 'Detalle': receipt.get('detalle', ''),
                 'Monto': round(amount_usd, 2) if amount_usd else 0,  # USD amount
