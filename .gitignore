@@ -29,3 +29,13 @@ output/
 uploads/
 *.csv
 *.db
+
+# PyInstaller build artifacts
+build/
+dist/
+*.spec.bak
+
+# Generated files
+*.xlsx
+*.pdf
+expense_reader_hybrid.py
