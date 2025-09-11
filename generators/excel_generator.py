@@ -1,5 +1,5 @@
 import pandas as pd
-from database import ExpenseDatabase
+from app.database import ExpenseDatabase
 from datetime import datetime
 import os
 

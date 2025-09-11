@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 import pandas as pd
 from datetime import datetime
 import json
+import PyPDF2
 
 # Load environment variables
 load_dotenv()
@@ -18,6 +19,19 @@ class ExpenseReader:
         tesseract_path = os.getenv('TESSERACT_PATH')
         if tesseract_path:
             pytesseract.pytesseract.tesseract_cmd = tesseract_path
+    
+    def extract_text_from_pdf(self, pdf_path):
+        """Extract text from PDF file"""
+        try:
+            text = ""
+            with open(pdf_path, 'rb') as file:
+                pdf_reader = PyPDF2.PdfReader(file)
+                for page in pdf_reader.pages:
+                    text += page.extract_text() + "\n"
+            return text.strip()
+        except Exception as e:
+            print(f"Error processing PDF {pdf_path}: {e}")
+            return None
     
     def extract_text_from_image(self, image_path):
         """Extract text from receipt image using OCR"""
@@ -38,6 +52,16 @@ class ExpenseReader:
             print(f"Error processing image {image_path}: {e}")
             return None
     
+    def extract_text_from_file(self, file_path):
+        """Extract text from either image or PDF file"""
+        file_extension = os.path.splitext(file_path)[1].lower()
+        
+        if file_extension == '.pdf':
+            return self.extract_text_from_pdf(file_path)
+        else:
+            # Assume it's an image file
+            return self.extract_text_from_image(file_path)
+    
     def extract_receipt_data(self, ocr_text, use_training_examples=True):
         """Use OpenAI to extract structured data from OCR text with few-shot learning"""
         
@@ -51,7 +75,7 @@ Here are some examples of correctly extracted data from similar receipts:
         # Add training examples if available and requested
         if use_training_examples:
             try:
-                from database import ExpenseDatabase
+                from app.database import ExpenseDatabase
                 db = ExpenseDatabase()
                 examples = db.get_training_examples(limit=3)
                 
@@ -102,37 +126,37 @@ Learn from the examples above to be more accurate. If any information is not fou
             print(f"Error extracting data with OpenAI: {e}")
             return None
     
-    def process_single_receipt(self, image_path):
-        """Process a single receipt image and return extracted data"""
-        print(f"Processing: {image_path}")
+    def process_single_receipt(self, file_path):
+        """Process a single receipt file (image or PDF) and return extracted data"""
+        print(f"Processing: {file_path}")
         
-        # Extract text using OCR
-        ocr_text = self.extract_text_from_image(image_path)
-        if not ocr_text:
+        # Extract text using OCR or PDF extraction
+        extracted_text = self.extract_text_from_file(file_path)
+        if not extracted_text:
             return None
         
-        print("OCR Text extracted:")
+        print("Extracted Text:")
         print("-" * 50)
-        print(ocr_text)
+        print(extracted_text)
         print("-" * 50)
         
         # Extract structured data using OpenAI
-        receipt_data = self.extract_receipt_data(ocr_text)
+        receipt_data = self.extract_receipt_data(extracted_text)
         if receipt_data:
-            receipt_data['image_file'] = os.path.basename(image_path)
+            receipt_data['file_name'] = os.path.basename(file_path)
             receipt_data['processed_date'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         return receipt_data
     
     def process_receipts_folder(self, folder_path):
-        """Process all receipt images in a folder"""
+        """Process all receipt files (images and PDFs) in a folder"""
         results = []
-        image_extensions = ['.jpg', '.jpeg', '.png', '.bmp', '.tiff']
+        supported_extensions = ['.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.pdf']
         
         for filename in os.listdir(folder_path):
-            if any(filename.lower().endswith(ext) for ext in image_extensions):
-                image_path = os.path.join(folder_path, filename)
-                receipt_data = self.process_single_receipt(image_path)
+            if any(filename.lower().endswith(ext) for ext in supported_extensions):
+                file_path = os.path.join(folder_path, filename)
+                receipt_data = self.process_single_receipt(file_path)
                 if receipt_data:
                     results.append(receipt_data)
         

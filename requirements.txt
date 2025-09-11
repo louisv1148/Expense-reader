@@ -8,3 +8,4 @@ sqlite3
 reportlab
 fpdf2
 openpyxl
+PyPDF2

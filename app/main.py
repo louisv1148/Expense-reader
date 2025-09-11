@@ -1,7 +1,7 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_file
 import os
-from expense_reader import ExpenseReader
-from database import ExpenseDatabase
+from core.expense_reader import ExpenseReader
+from app.database import ExpenseDatabase
 import base64
 from io import BytesIO
 import pandas as pd
@@ -37,21 +37,21 @@ def upload():
             if file and allowed_file(file.filename):
                 # Save uploaded file
                 filename = file.filename
-                upload_path = os.path.join('uploads', filename)
-                os.makedirs('uploads', exist_ok=True)
+                upload_path = os.path.join('data/uploads', filename)
+                os.makedirs('data/uploads', exist_ok=True)
                 file.save(upload_path)
                 
-                # Process with OCR
-                ocr_text = reader.extract_text_from_image(upload_path)
-                if ocr_text:
+                # Process with OCR or PDF extraction
+                extracted_text = reader.extract_text_from_file(upload_path)
+                if extracted_text:
                     # Extract data with AI
-                    receipt_data = reader.extract_receipt_data(ocr_text)
+                    receipt_data = reader.extract_receipt_data(extracted_text)
                     
                     # Save to database
                     db.add_receipt(
                         filename=filename,
                         file_path=upload_path,
-                        ocr_text=ocr_text,
+                        ocr_text=extracted_text,
                         restaurant_name=receipt_data.get('restaurant_name') if receipt_data else None,
                         date=receipt_data.get('date') if receipt_data else None,
                         total_amount=receipt_data.get('total_amount') if receipt_data else None
@@ -71,13 +71,35 @@ def review(receipt_id):
         flash('Receipt not found')
         return redirect(url_for('index'))
     
-    # Convert image to base64 for display
+    # Handle file display based on type
     image_data = None
+    is_pdf = False
     if os.path.exists(receipt['file_path']):
-        with open(receipt['file_path'], 'rb') as f:
-            image_data = base64.b64encode(f.read()).decode()
+        file_extension = os.path.splitext(receipt['file_path'])[1].lower()
+        if file_extension == '.pdf':
+            is_pdf = True
+            # For PDFs, we'll just provide the file path for download/viewing
+        else:
+            # For images, convert to base64 for display
+            with open(receipt['file_path'], 'rb') as f:
+                image_data = base64.b64encode(f.read()).decode()
     
-    return render_template('review.html', receipt=receipt, image_data=image_data)
+    return render_template('review.html', receipt=receipt, image_data=image_data, is_pdf=is_pdf)
+
+@app.route('/view-pdf/<int:receipt_id>')
+def view_pdf(receipt_id):
+    """Serve PDF file for viewing"""
+    receipt = db.get_receipt(receipt_id)
+    if not receipt or not os.path.exists(receipt['file_path']):
+        flash('Receipt file not found')
+        return redirect(url_for('index'))
+    
+    file_extension = os.path.splitext(receipt['file_path'])[1].lower()
+    if file_extension != '.pdf':
+        flash('File is not a PDF')
+        return redirect(url_for('review', receipt_id=receipt_id))
+    
+    return send_file(receipt['file_path'], as_attachment=False, mimetype='application/pdf')
 
 @app.route('/update/<int:receipt_id>', methods=['POST'])
 def update_receipt(receipt_id):
@@ -107,7 +129,7 @@ def update_receipt(receipt_id):
     
     # Rename file if we have date and restaurant name
     if date and restaurant_name:
-        from filename_utils import format_receipt_filename, rename_receipt_file
+        from core.filename_utils import format_receipt_filename, rename_receipt_file
         receipt = db.get_receipt(receipt_id)
         if receipt and receipt['file_path']:
             new_filename = format_receipt_filename(date, restaurant_name)
@@ -144,7 +166,7 @@ def export():
 def export_pdf():
     """Export expense report as PDF with receipt images"""
     try:
-        from pdf_generator import ExpensePDFGenerator
+        from generators.pdf_generator import ExpensePDFGenerator
         
         generator = ExpensePDFGenerator()
         pdf_filename = generator.generate_expense_report("expense_report_approval.pdf", include_images=True)
@@ -162,7 +184,7 @@ def export_pdf():
 def export_pdf_summary():
     """Export expense report as PDF summary only (no images)"""
     try:
-        from pdf_generator import ExpensePDFGenerator
+        from generators.pdf_generator import ExpensePDFGenerator
         
         generator = ExpensePDFGenerator()
         pdf_filename = generator.generate_expense_report("expense_summary.pdf", include_images=False)
@@ -180,7 +202,7 @@ def export_pdf_summary():
 def export_excel():
     """Export expense report as Excel file matching company format"""
     try:
-        from excel_generator import ExcelExpenseGenerator
+        from generators.excel_generator import ExcelExpenseGenerator
         
         generator = ExcelExpenseGenerator()
         excel_filename = generator.generate_monthly_report()
@@ -296,7 +318,7 @@ def clear_all_receipts():
 
 def allowed_file(filename):
     """Check if file extension is allowed"""
-    ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'tiff'}
+    ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'tiff', 'pdf'}
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 if __name__ == '__main__':

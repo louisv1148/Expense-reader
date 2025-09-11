@@ -7,7 +7,7 @@ from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from PIL import Image as PILImage
 import os
 from datetime import datetime
-from database import ExpenseDatabase
+from app.database import ExpenseDatabase
 
 class ExpensePDFGenerator:
     def __init__(self):
