@@ -167,12 +167,29 @@ def export_pdf():
     """Export expense report as PDF with receipt images"""
     try:
         from generators.pdf_generator import ExpensePDFGenerator
-        
+        import tempfile
+
+        # Create PDF in a temporary file that we control
+        temp_pdf = tempfile.NamedTemporaryFile(delete=False, suffix='.pdf', prefix='expense_report_')
+        temp_pdf.close()
+
         generator = ExpensePDFGenerator()
-        pdf_filename = generator.generate_expense_report("expense_report_approval.pdf", include_images=True)
-        
-        return send_file(pdf_filename, as_attachment=True, download_name='expense_report_approval.pdf')
-        
+        pdf_filename = generator.generate_expense_report(temp_pdf.name, include_images=True)
+
+        # Send file and clean up after
+        response = send_file(pdf_filename, as_attachment=True, download_name='expense_report_approval.pdf')
+
+        # Clean up temp file after response is sent (Flask handles this)
+        @response.call_on_close
+        def cleanup():
+            try:
+                if os.path.exists(temp_pdf.name):
+                    os.remove(temp_pdf.name)
+            except:
+                pass
+
+        return response
+
     except ValueError as e:
         flash(str(e))
         return redirect(url_for('index'))
@@ -185,12 +202,29 @@ def export_pdf_summary():
     """Export expense report as PDF summary only (no images)"""
     try:
         from generators.pdf_generator import ExpensePDFGenerator
-        
+        import tempfile
+
+        # Create PDF in a temporary file that we control
+        temp_pdf = tempfile.NamedTemporaryFile(delete=False, suffix='.pdf', prefix='expense_summary_')
+        temp_pdf.close()
+
         generator = ExpensePDFGenerator()
-        pdf_filename = generator.generate_expense_report("expense_summary.pdf", include_images=False)
-        
-        return send_file(pdf_filename, as_attachment=True, download_name='expense_summary.pdf')
-        
+        pdf_filename = generator.generate_expense_report(temp_pdf.name, include_images=False)
+
+        # Send file and clean up after
+        response = send_file(pdf_filename, as_attachment=True, download_name='expense_summary.pdf')
+
+        # Clean up temp file after response is sent (Flask handles this)
+        @response.call_on_close
+        def cleanup():
+            try:
+                if os.path.exists(temp_pdf.name):
+                    os.remove(temp_pdf.name)
+            except:
+                pass
+
+        return response
+
     except ValueError as e:
         flash(str(e))
         return redirect(url_for('index'))
@@ -203,12 +237,33 @@ def export_excel():
     """Export expense report as Excel file matching company format"""
     try:
         from generators.excel_generator import ExcelExpenseGenerator
-        
+        from datetime import datetime
+        import tempfile
+
+        # Create Excel in a temporary file with proper naming
+        current_date = datetime.now()
+        download_name = f"{current_date.year}_{current_date.month:02d}_Gastos_MX.xlsx"
+
+        temp_excel = tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx', prefix='expense_report_')
+        temp_excel.close()
+
         generator = ExcelExpenseGenerator()
-        excel_filename = generator.generate_monthly_report()
-        
-        return send_file(excel_filename, as_attachment=True, download_name=excel_filename)
-        
+        excel_filename = generator.generate_monthly_report(temp_excel.name)
+
+        # Send file and clean up after
+        response = send_file(excel_filename, as_attachment=True, download_name=download_name)
+
+        # Clean up temp file after response is sent (Flask handles this)
+        @response.call_on_close
+        def cleanup():
+            try:
+                if os.path.exists(temp_excel.name):
+                    os.remove(temp_excel.name)
+            except:
+                pass
+
+        return response
+
     except ValueError as e:
         flash(str(e))
         return redirect(url_for('index'))

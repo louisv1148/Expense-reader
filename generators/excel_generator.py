@@ -30,7 +30,7 @@ class ExcelExpenseGenerator:
             # Format date for filename if available
             formatted_filename = receipt['filename']
             if receipt.get('date') and receipt.get('restaurant_name'):
-                from filename_utils import format_receipt_filename
+                from core.filename_utils import format_receipt_filename
                 new_filename = format_receipt_filename(receipt['date'], receipt['restaurant_name'])
                 if new_filename:
                     formatted_filename = new_filename
