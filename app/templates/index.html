@@ -20,9 +20,12 @@
                 <button type="button" class="btn btn-outline-danger" onclick="clearAllReceipts()">
                     <i class="fas fa-trash-alt"></i> Clear All
                 </button>
+                <a href="{{ url_for('export_organized_files') }}" class="btn btn-info">
+                    <i class="fas fa-folder-open"></i> Export Organized Files
+                </a>
                 <div class="btn-group" role="group">
                     <button type="button" class="btn btn-success dropdown-toggle" data-bs-toggle="dropdown">
-                        <i class="fas fa-download"></i> Export
+                        <i class="fas fa-download"></i> Export Reports
                     </button>
                     <ul class="dropdown-menu">
                         <li><a class="dropdown-item" href="{{ url_for('export_excel') }}"><i class="fas fa-file-excel"></i> Excel Report (Company Format)</a></li>
@@ -58,7 +61,11 @@
                                         {% for receipt in receipts %}
                                         <tr>
                                             <td>
-                                                <small class="text-muted">{{ receipt.filename }}</small>
+                                                {% if receipt.reviewed %}
+                                                    <small class="text-success"><strong>{{ receipt.display_filename }}</strong></small>
+                                                {% else %}
+                                                    <small class="text-muted">{{ receipt.display_filename }}</small>
+                                                {% endif %}
                                             </td>
                                             <td>
                                                 {% if receipt.restaurant_name %}

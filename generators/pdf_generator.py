@@ -140,13 +140,17 @@ class ExpensePDFGenerator:
     
     def _add_summary_table(self, story, receipts):
         """Add summary table of all expenses"""
-        
+
         story.append(Paragraph("EXPENSE SUMMARY", self.header_style))
         story.append(Spacer(1, 12))
-        
+
         # Table headers
-        data = [["Date", "Restaurant/Venue", "Amount", "Receipt #"]]
-        
+        data = [["Date", "Restaurant/Venue", "Amount", "Receipt Name"]]
+
+        # Track duplicate filenames for sequential numbering
+        from core.file_utils import format_receipt_filename
+        seen_filenames = {}
+
         # Add receipt data
         for receipt in receipts:
             # Calculate USD amount
@@ -155,10 +159,22 @@ class ExpensePDFGenerator:
                 markup = receipt.get('markup_percent', 2.5)
                 usd_base = receipt['total_amount'] / receipt['fx_rate']
                 amount_usd = usd_base * (1 + markup / 100)
-            
+
+            # Generate formatted filename with duplicate handling
+            display_filename = receipt['filename']
+            if receipt.get('date') and receipt.get('restaurant_name'):
+                formatted_name = format_receipt_filename(receipt['date'], receipt['restaurant_name'])
+                if formatted_name:
+                    if formatted_name in seen_filenames:
+                        seen_filenames[formatted_name] += 1
+                        display_filename = f"{formatted_name}_{seen_filenames[formatted_name]}.pdf"
+                    else:
+                        seen_filenames[formatted_name] = 1
+                        display_filename = f"{formatted_name}.pdf"
+
             # Create paragraph for filename to handle long names
-            filename_para = Paragraph(receipt['filename'] or 'N/A', self.normal_style)
-            
+            filename_para = Paragraph(display_filename or 'N/A', self.normal_style)
+
             data.append([
                 receipt['date'] or 'N/A',
                 receipt['restaurant_name'] or 'N/A',
@@ -289,14 +305,21 @@ class ExpensePDFGenerator:
                 unique_receipts.append(receipt)
         
         for i, receipt in enumerate(unique_receipts, 1):
-            # Receipt header
-            story.append(Paragraph(f"Receipt #{i:03d}", self.header_style))
-            
-            # Receipt info table - show basic info for the original receipt
+            # Generate formatted filename
+            from core.file_utils import format_receipt_filename
+            display_filename = receipt['filename']
+            if receipt.get('date') and receipt.get('restaurant_name'):
+                formatted_name = format_receipt_filename(receipt['date'], receipt['restaurant_name'])
+                if formatted_name:
+                    display_filename = f"{formatted_name}.pdf"
+
+            # Receipt header - use formatted filename as title
+            story.append(Paragraph(display_filename, self.header_style))
+
+            # Receipt info table - show basic info (Image File line removed as it's redundant)
             info_data = [
                 ["Restaurant:", receipt['restaurant_name'] or 'N/A'],
-                ["Date:", receipt['date'] or 'N/A'],
-                ["Image File:", receipt['filename'] or 'N/A']
+                ["Date:", receipt['date'] or 'N/A']
             ]
             
             info_table = Table(info_data, colWidths=[1.5*inch, 4*inch])

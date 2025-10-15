@@ -2,9 +2,11 @@ from flask import Flask, render_template, request, redirect, url_for, flash, jso
 import os
 from core.expense_reader import ExpenseReader
 from app.database import ExpenseDatabase
+from core.file_utils import format_receipt_filename, get_export_folder, get_unique_filename, export_organized_receipts
 import base64
 from io import BytesIO
 import pandas as pd
+from pathlib import Path
 
 app = Flask(__name__)
 app.secret_key = 'your-secret-key-change-this'
@@ -17,6 +19,30 @@ db = ExpenseDatabase()
 def index():
     """Main dashboard showing all receipts"""
     receipts = db.get_all_receipts()
+
+    # Add formatted filename for display with duplicate handling
+    # Track which filenames we've seen to add _2, _3, etc.
+    seen_filenames = {}
+
+    for receipt in receipts:
+        if receipt.get('reviewed') and receipt.get('date') and receipt.get('restaurant_name'):
+            formatted_name = format_receipt_filename(receipt['date'], receipt['restaurant_name'])
+
+            if formatted_name:
+                # Check if we've seen this filename before
+                if formatted_name in seen_filenames:
+                    seen_filenames[formatted_name] += 1
+                    display_name = f"{formatted_name}_{seen_filenames[formatted_name]}.pdf"
+                else:
+                    seen_filenames[formatted_name] = 1
+                    display_name = f"{formatted_name}.pdf"
+
+                receipt['display_filename'] = display_name
+            else:
+                receipt['display_filename'] = receipt['filename']
+        else:
+            receipt['display_filename'] = receipt['filename']
+
     return render_template('index.html', receipts=receipts)
 
 @app.route('/upload', methods=['GET', 'POST'])
@@ -124,28 +150,18 @@ def update_receipt(receipt_id):
         return redirect(url_for('review', receipt_id=receipt_id))
     
     # Update receipt with all new fields
-    db.update_receipt(receipt_id, restaurant_name, date, total_amount, 
+    db.update_receipt(receipt_id, restaurant_name, date, total_amount,
                      cuenta_contable, cc, fx_rate, markup_percent, reembolso, detalle)
-    
-    # Rename file if we have date and restaurant name
+
+    # Generate intended filename for export (yyyy_mm_RestaurantName)
     if date and restaurant_name:
-        from core.filename_utils import format_receipt_filename, rename_receipt_file
-        receipt = db.get_receipt(receipt_id)
-        if receipt and receipt['file_path']:
-            new_filename = format_receipt_filename(date, restaurant_name)
-            if new_filename:
-                new_path = rename_receipt_file(receipt['file_path'], new_filename)
-                if new_path:
-                    # Update database with new file path
-                    import sqlite3
-                    conn = sqlite3.connect(db.db_path)
-                    cursor = conn.cursor()
-                    cursor.execute('UPDATE receipts SET file_path = ?, filename = ? WHERE id = ?', 
-                                 (new_path, new_filename, receipt_id))
-                    conn.commit()
-                    conn.close()
-    
-    flash('Receipt updated successfully')
+        intended_filename = format_receipt_filename(date, restaurant_name)
+        if intended_filename:
+            flash(f'Receipt updated successfully. Will export as: {intended_filename}.pdf')
+        else:
+            flash('Receipt updated successfully')
+    else:
+        flash('Receipt updated successfully')
     return redirect(url_for('index'))
 
 @app.route('/export')
@@ -167,27 +183,25 @@ def export_pdf():
     """Export expense report as PDF with receipt images"""
     try:
         from generators.pdf_generator import ExpensePDFGenerator
-        import tempfile
+        from datetime import datetime
 
-        # Create PDF in a temporary file that we control
-        temp_pdf = tempfile.NamedTemporaryFile(delete=False, suffix='.pdf', prefix='expense_report_')
-        temp_pdf.close()
+        # Get current month for folder organization
+        current_date = datetime.now()
+        year_month = f"{current_date.year}_{current_date.month:02d}"
 
+        # Get export folder
+        export_folder = get_export_folder(year_month)
+        output_filename = 'expense_report_approval.pdf'
+        output_path = export_folder / output_filename
+
+        # Generate PDF
         generator = ExpensePDFGenerator()
-        pdf_filename = generator.generate_expense_report(temp_pdf.name, include_images=True)
+        pdf_filename = generator.generate_expense_report(str(output_path), include_images=True)
 
-        # Send file and clean up after
-        response = send_file(pdf_filename, as_attachment=True, download_name='expense_report_approval.pdf')
+        # Send file for download
+        response = send_file(pdf_filename, as_attachment=True, download_name=output_filename)
 
-        # Clean up temp file after response is sent (Flask handles this)
-        @response.call_on_close
-        def cleanup():
-            try:
-                if os.path.exists(temp_pdf.name):
-                    os.remove(temp_pdf.name)
-            except:
-                pass
-
+        flash(f'✅ PDF report saved to: {export_folder}')
         return response
 
     except ValueError as e:
@@ -202,27 +216,25 @@ def export_pdf_summary():
     """Export expense report as PDF summary only (no images)"""
     try:
         from generators.pdf_generator import ExpensePDFGenerator
-        import tempfile
+        from datetime import datetime
 
-        # Create PDF in a temporary file that we control
-        temp_pdf = tempfile.NamedTemporaryFile(delete=False, suffix='.pdf', prefix='expense_summary_')
-        temp_pdf.close()
+        # Get current month for folder organization
+        current_date = datetime.now()
+        year_month = f"{current_date.year}_{current_date.month:02d}"
 
+        # Get export folder
+        export_folder = get_export_folder(year_month)
+        output_filename = 'expense_summary.pdf'
+        output_path = export_folder / output_filename
+
+        # Generate PDF
         generator = ExpensePDFGenerator()
-        pdf_filename = generator.generate_expense_report(temp_pdf.name, include_images=False)
+        pdf_filename = generator.generate_expense_report(str(output_path), include_images=False)
 
-        # Send file and clean up after
-        response = send_file(pdf_filename, as_attachment=True, download_name='expense_summary.pdf')
+        # Send file for download
+        response = send_file(pdf_filename, as_attachment=True, download_name=output_filename)
 
-        # Clean up temp file after response is sent (Flask handles this)
-        @response.call_on_close
-        def cleanup():
-            try:
-                if os.path.exists(temp_pdf.name):
-                    os.remove(temp_pdf.name)
-            except:
-                pass
-
+        flash(f'✅ PDF summary saved to: {export_folder}')
         return response
 
     except ValueError as e:
@@ -238,30 +250,24 @@ def export_excel():
     try:
         from generators.excel_generator import ExcelExpenseGenerator
         from datetime import datetime
-        import tempfile
 
-        # Create Excel in a temporary file with proper naming
+        # Create Excel filename with current month
         current_date = datetime.now()
-        download_name = f"{current_date.year}_{current_date.month:02d}_Gastos_MX.xlsx"
+        year_month = f"{current_date.year}_{current_date.month:02d}"
+        output_filename = f"{year_month}_Gastos_MX.xlsx"
 
-        temp_excel = tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx', prefix='expense_report_')
-        temp_excel.close()
+        # Get export folder
+        export_folder = get_export_folder(year_month)
+        output_path = export_folder / output_filename
 
+        # Generate Excel
         generator = ExcelExpenseGenerator()
-        excel_filename = generator.generate_monthly_report(temp_excel.name)
+        excel_filename = generator.generate_monthly_report(str(output_path))
 
-        # Send file and clean up after
-        response = send_file(excel_filename, as_attachment=True, download_name=download_name)
+        # Send file for download
+        response = send_file(excel_filename, as_attachment=True, download_name=output_filename)
 
-        # Clean up temp file after response is sent (Flask handles this)
-        @response.call_on_close
-        def cleanup():
-            try:
-                if os.path.exists(temp_excel.name):
-                    os.remove(temp_excel.name)
-            except:
-                pass
-
+        flash(f'✅ Excel report saved to: {export_folder}')
         return response
 
     except ValueError as e:
@@ -288,6 +294,39 @@ def delete_receipt_route(receipt_id):
     else:
         flash('Receipt not found')
     
+    return redirect(url_for('index'))
+
+@app.route('/export/organized-files')
+def export_organized_files():
+    """Export all reviewed receipts as organized PDFs to Downloads/Expense_Receipts folder"""
+    try:
+        # Get all reviewed receipts
+        receipts = db.get_all_receipts()
+        reviewed_receipts = [r for r in receipts if r.get('reviewed')]
+
+        if not reviewed_receipts:
+            flash('No reviewed receipts to export. Please review receipts first.')
+            return redirect(url_for('index'))
+
+        # Export organized files
+        result = export_organized_receipts(reviewed_receipts, db)
+
+        if result['success']:
+            exported = result['exported_count']
+            skipped = result['skipped_count']
+            folder = result['folder']
+
+            message = f"✅ Exported {exported} receipt(s) to: {folder}"
+            if skipped > 0:
+                message += f"\n⚠️ Skipped {skipped} receipt(s)"
+
+            flash(message)
+        else:
+            flash(f"❌ Error exporting files: {result.get('error', 'Unknown error')}")
+
+    except Exception as e:
+        flash(f'Error exporting organized files: {str(e)}')
+
     return redirect(url_for('index'))
 
 @app.route('/api/reembolso-suggestions')
