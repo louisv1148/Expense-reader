@@ -25,10 +25,12 @@ Thumbs.db
 
 # Project specific
 receipts/
-output/
 uploads/
 *.csv
 *.db
+
+# Output directory (reports and generated files)
+output/
 
 # PyInstaller build artifacts
 build/
@@ -38,4 +40,15 @@ dist/
 # Generated files
 *.xlsx
 *.pdf
+
+# Backup files
+*.backup
+*.bak
+*~
+*.tmp
+*.old
+
+# Test files
+test_*.pdf
+test_*.xlsx
 expense_reader_hybrid.py
