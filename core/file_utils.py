@@ -66,6 +66,39 @@ def format_receipt_filename(date, restaurant_name):
     return f"{year_month}_{sanitized_name}"
 
 
+def add_display_filenames_to_receipts(receipts):
+    """
+    Add display_filename field to each receipt with duplicate handling.
+    Modifies receipts list in-place, adding 'display_filename' field.
+
+    Args:
+        receipts: List of receipt dictionaries
+
+    Returns:
+        None (modifies receipts in-place)
+    """
+    seen_filenames = {}
+
+    for receipt in receipts:
+        if receipt.get('reviewed') and receipt.get('date') and receipt.get('restaurant_name'):
+            formatted_name = format_receipt_filename(receipt['date'], receipt['restaurant_name'])
+
+            if formatted_name:
+                # Check if we've seen this filename before
+                if formatted_name in seen_filenames:
+                    seen_filenames[formatted_name] += 1
+                    display_name = f"{formatted_name}_{seen_filenames[formatted_name]}.pdf"
+                else:
+                    seen_filenames[formatted_name] = 1
+                    display_name = f"{formatted_name}.pdf"
+
+                receipt['display_filename'] = display_name
+            else:
+                receipt['display_filename'] = receipt['filename']
+        else:
+            receipt['display_filename'] = receipt['filename']
+
+
 def get_export_folder(year_month=None):
     """
     Get the export folder path, creating it if necessary.

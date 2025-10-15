@@ -2,6 +2,7 @@ import sqlite3
 import json
 from datetime import datetime
 import os
+from core.file_utils import format_receipt_filename
 
 class ExpenseDatabase:
     def __init__(self, db_path="expenses.db"):
@@ -56,7 +57,15 @@ class ExpenseDatabase:
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
-        
+
+        # Add display_filename column if it doesn't exist (migration)
+        try:
+            cursor.execute('ALTER TABLE receipts ADD COLUMN display_filename TEXT')
+            conn.commit()
+        except sqlite3.OperationalError:
+            # Column already exists
+            pass
+
         conn.commit()
         conn.close()
     
@@ -95,13 +104,13 @@ class ExpenseDatabase:
         
         cursor.execute('''
             SELECT id, filename, file_path, ocr_text, restaurant_name, date, total_amount, reviewed,
-                   cuenta_contable, pais, cc, fx_rate, markup_percent, amount_mxn, reembolso, detalle
+                   cuenta_contable, pais, cc, fx_rate, markup_percent, amount_mxn, reembolso, detalle, display_filename
             FROM receipts ORDER BY created_at DESC
         ''')
-        
+
         receipts = cursor.fetchall()
         conn.close()
-        
+
         return [
             {
                 'id': r[0],
@@ -119,7 +128,8 @@ class ExpenseDatabase:
                 'markup_percent': r[12] if len(r) > 12 else 2.5,
                 'amount_mxn': r[13] if len(r) > 13 else None,
                 'reembolso': r[14] if len(r) > 14 else None,
-                'detalle': r[15] if len(r) > 15 else None
+                'detalle': r[15] if len(r) > 15 else None,
+                'display_filename': r[16] if len(r) > 16 else None
             }
             for r in receipts
         ]
@@ -131,13 +141,13 @@ class ExpenseDatabase:
         
         cursor.execute('''
             SELECT id, filename, file_path, ocr_text, restaurant_name, date, total_amount, reviewed,
-                   cuenta_contable, pais, cc, fx_rate, markup_percent, amount_mxn, reembolso, detalle
+                   cuenta_contable, pais, cc, fx_rate, markup_percent, amount_mxn, reembolso, detalle, display_filename
             FROM receipts WHERE id = ?
         ''', (receipt_id,))
-        
+
         result = cursor.fetchone()
         conn.close()
-        
+
         if result:
             return {
                 'id': result[0],
@@ -155,16 +165,17 @@ class ExpenseDatabase:
                 'markup_percent': result[12] if len(result) > 12 else 2.5,
                 'amount_mxn': result[13] if len(result) > 13 else None,
                 'reembolso': result[14] if len(result) > 14 else None,
-                'detalle': result[15] if len(result) > 15 else None
+                'detalle': result[15] if len(result) > 15 else None,
+                'display_filename': result[16] if len(result) > 16 else None
             }
         return None
     
-    def update_receipt(self, receipt_id, restaurant_name=None, date=None, total_amount=None, 
+    def update_receipt(self, receipt_id, restaurant_name=None, date=None, total_amount=None,
                       cuenta_contable=None, cc=None, fx_rate=None, markup_percent=None, reembolso=None, detalle=None):
         """Update receipt data with all new fields"""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
-        
+
         # Calculate USD amount (receipts are in MXN, convert to USD)
         amount_usd = None
         if total_amount and fx_rate:
@@ -172,15 +183,33 @@ class ExpenseDatabase:
             amount_usd = total_amount / fx_rate
             # Apply markup to USD amount
             amount_usd = amount_usd * (1 + (markup_percent or 2.5) / 100)
-        
+
+        # Generate display_filename
+        display_filename = None
+        if date and restaurant_name:
+            formatted_name = format_receipt_filename(date, restaurant_name)
+            if formatted_name:
+                # Get all existing display filenames to check for duplicates
+                cursor.execute('SELECT display_filename FROM receipts WHERE id != ? AND reviewed = TRUE', (receipt_id,))
+                existing_filenames = {row[0].replace('.pdf', '') for row in cursor.fetchall() if row[0]}
+
+                # Check if this formatted name already exists
+                counter = 1
+                test_name = formatted_name
+                while test_name in existing_filenames:
+                    counter += 1
+                    test_name = f"{formatted_name}_{counter}"
+
+                display_filename = f"{test_name}.pdf"
+
         cursor.execute('''
-            UPDATE receipts 
-            SET restaurant_name = ?, date = ?, total_amount = ?, cuenta_contable = ?, 
+            UPDATE receipts
+            SET restaurant_name = ?, date = ?, total_amount = ?, cuenta_contable = ?,
                 cc = ?, fx_rate = ?, markup_percent = ?, amount_mxn = ?, reembolso = ?, detalle = ?,
-                reviewed = TRUE, updated_at = CURRENT_TIMESTAMP
+                display_filename = ?, reviewed = TRUE, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
-        ''', (restaurant_name, date, total_amount, cuenta_contable, cc, fx_rate, markup_percent, amount_usd, reembolso, detalle, receipt_id))
-        
+        ''', (restaurant_name, date, total_amount, cuenta_contable, cc, fx_rate, markup_percent, amount_usd, reembolso, detalle, display_filename, receipt_id))
+
         conn.commit()
         conn.close()
         

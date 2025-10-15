@@ -2,7 +2,7 @@ from flask import Flask, render_template, request, redirect, url_for, flash, jso
 import os
 from core.expense_reader import ExpenseReader
 from app.database import ExpenseDatabase
-from core.file_utils import format_receipt_filename, get_export_folder, get_unique_filename, export_organized_receipts
+from core.file_utils import format_receipt_filename, get_export_folder, get_unique_filename, export_organized_receipts, add_display_filenames_to_receipts
 import base64
 from io import BytesIO
 import pandas as pd
@@ -20,27 +20,11 @@ def index():
     """Main dashboard showing all receipts"""
     receipts = db.get_all_receipts()
 
-    # Add formatted filename for display with duplicate handling
-    # Track which filenames we've seen to add _2, _3, etc.
-    seen_filenames = {}
-
+    # For receipts without display_filename (legacy data), generate them on-the-fly
+    # New receipts will have display_filename set when they're reviewed
     for receipt in receipts:
-        if receipt.get('reviewed') and receipt.get('date') and receipt.get('restaurant_name'):
-            formatted_name = format_receipt_filename(receipt['date'], receipt['restaurant_name'])
-
-            if formatted_name:
-                # Check if we've seen this filename before
-                if formatted_name in seen_filenames:
-                    seen_filenames[formatted_name] += 1
-                    display_name = f"{formatted_name}_{seen_filenames[formatted_name]}.pdf"
-                else:
-                    seen_filenames[formatted_name] = 1
-                    display_name = f"{formatted_name}.pdf"
-
-                receipt['display_filename'] = display_name
-            else:
-                receipt['display_filename'] = receipt['filename']
-        else:
+        if not receipt.get('display_filename'):
+            # Fallback to original filename for unreviewed or legacy receipts
             receipt['display_filename'] = receipt['filename']
 
     return render_template('index.html', receipts=receipts)

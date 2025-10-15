@@ -9,3 +9,4 @@ reportlab
 fpdf2
 openpyxl
 PyPDF2
+pypdfium2
